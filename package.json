@@ -1,0 +1,26 @@
+{
+  "name": "pode",
+  "version": "1.0.0",
+  "description": "Better Node REPL",
+  "main": "index.js",
+  "bin": "./repl.bash",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nfcampos/pode.git"
+  },
+  "author": "Nuno Campos <nuno.campos@me.com> (https://github.com/nfcampos)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/nfcampos/pode/issues"
+  },
+  "homepage": "https://github.com/nfcampos/pode",
+  "dependencies": {
+    "async-to-gen": "^1.0.5",
+    "lodash": "^4.15.0",
+    "reify": "^0.3.6",
+    "repl.history": "^0.1.3"
+  }
+}
