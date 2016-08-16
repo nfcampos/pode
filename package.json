@@ -1,6 +1,6 @@
 {
   "name": "pode",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Better Node REPL",
   "main": "index.js",
   "bin": "./repl.bash",
