@@ -1,8 +1,9 @@
 // require('babel-register')
 
 const repl = require('repl')
+const path = require('path')
 const vm = require('vm')
-
+const mkdirp = require('mkdirp')
 const replHistory = require('repl.history')
 const asyncToGen = require('async-to-gen')
 const _ = require('lodash')
@@ -98,6 +99,7 @@ function isRecoverableError(error) {
 }
 
 function patch({
+  paths,
   history = true,
   historyAutocomplete = true,
   importExport = true,
@@ -119,7 +121,8 @@ function patch({
 
       if (history) {
         // add history
-        replHistory(replServer, process.env.HOME + '/.pode_history')
+        mkdirp.sync(paths.data)
+        replHistory(replServer, paths.data + '/.history')
       }
 
       if (historyAutocomplete) {
