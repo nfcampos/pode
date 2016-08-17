@@ -1,64 +1,71 @@
 #! /usr/bin/env node
 
+require('loud-rejection/register')
+
+const path = require('path')
 const repl = require('repl')
 const meow = require('meow')
 const chalk = require('chalk')
 const envPaths = require('env-paths')
 const loadPackages = require('trymodule')
+const {last, compact, isEqual} = require('lodash')
 
-const {patch} = require('.')
+const {patchRepl} = require('.')
 
-const paths = envPaths('pode')
+// https://github.com/nodejs/node/blob/master/lib/repl.js#L53
+// hack to get relative requires to work as expected
+module.filename = path.resolve('repl')
+
+const appPaths = envPaths('pode')
 
 const cli = meow(`
   Usage
     $ pode <module> <module> ...
 
   Options
-    --clear, Clear module cache
+    --clear, Clear module cache (not implemented yet)
 
   Examples
-    $ pode babel-require lodash.map
+    $ pode babel-require lodash/map
 `)
 
-const makeVariableFriendly = str => str.replace(/-|\.|\//g, '_')
+const varName = str => {
+  if (str.includes('/'))
+    str = last(compact(str.split('/')))
+
+  return str.replace(/\.js$/, '').replace(/-|\.|\//g, '_')
+}
 
 function start () {
-  const packages = cli.input.map(str => {
-    const pkg = {}
-    if (str.includes('.')) {
-      const [pkgName, importName] = str.split('.')
-      pkg.require = pkgName
-      pkg.import = importName
-    } else {
-      pkg.require = str
-    }
-
-    return pkg
-  })
-
-  return Promise.all(packages.map(p => {
+  return Promise.all(cli.input.map(str => {
     try {
-      return [p, require(p.require)]
+      return [str, require(str)]
     } catch (e) {
-      return loadPackages({ [p.require]: null }, paths.cache)
-        .then(([pkg]) => [p, pkg.package])
+      try {
+        return [str, require('./' + str)]
+      } catch (e) {
+        if (e.message.includes('Cannot find module'))
+          return loadPackages({ [str]: null }, appPaths.cache)
+            .then(([pkg]) => [str, pkg.package])
+        else
+          throw e
+      }
     }
   })).then(packages => {
-    const bindings = packages.reduce((b, [p, pkg]) => {
-      if (p.import) {
-        b[p.import] = pkg[p.import]
-        console.log(chalk.blue(
-          `${p.import} = require('${p.require}').${p.import}`))
+    const bindings = packages.reduce((b, [str, pkg]) => {
+      if (!Object.keys(pkg).length && typeof pkg !== 'function') {
+        console.log(chalk.blue(`require('${str}')`))
       } else {
-        b[makeVariableFriendly(p.require)] = pkg
-        console.log(chalk.blue(
-          `${makeVariableFriendly(p.require)} = require('${p.require}')`))
+        let onlyDefaultExport = pkg.__esModule
+          && isEqual(Object.keys(pkg), ['default'])
+        b[varName(str)] = onlyDefaultExport ? pkg.default : pkg
+        console.log(chalk.blue(`${varName(str)} = require('${str}')`))
       }
       return b
     }, {})
 
-    patch({paths})
+    patchRepl({appPaths, historyAutocomplete: false, importExport: false})
+
     const replServer = repl.start({ignoreUndefined: true, useColors: true})
 
     Object.assign(replServer.context, bindings)
@@ -66,7 +73,7 @@ function start () {
 }
 
 if (cli.flags.clear) {
-  // clear the cache
+  // TODO: clear the cache
 } else {
   start()
 }

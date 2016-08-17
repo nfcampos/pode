@@ -6,7 +6,7 @@ const vm = require('vm')
 const mkdirp = require('mkdirp')
 const replHistory = require('repl.history')
 const asyncToGen = require('async-to-gen')
-const _ = require('lodash')
+const {flatten, compact} = require('lodash')
 
 function addHistoryAutocomplete(replServer) {
   let words = []
@@ -15,7 +15,7 @@ function addHistoryAutocomplete(replServer) {
 
   function wordsFromHistory() {
     const matches = replServer.history.map(line => line.match(wordRe))
-    words = [...new Set(_.flatten(_.compact(matches)))]
+    words = [...new Set(flatten(compact(matches)))]
     return words.sort((a, b) => a.localeCompare(b))
   }
 
@@ -32,8 +32,8 @@ function addHistoryAutocomplete(replServer) {
 
         if (!completions.length || !completeOn.includes(lastWordOfLine)) {
           completions = words.filter(w => w.indexOf(lastWordOfLine) === 0)
-          callback(null, [completions, lastWordOfLine])
-
+          // TODO: should the last arg be completeOn, lastWordOfLine, line ?
+          callback(null, [completions, completeOn])
         } else {
           callback(null, [completions, completeOn])
 
@@ -61,12 +61,19 @@ function addHistoryAutocomplete(replServer) {
 function addAwaitEval(replServer) {
   let re = /^(?:\s*(?:(?:let|var|const)\s)?\s*([^=]+)=\s*|^\s*)(await[\s\S]*)/
 
-  let wrap = (code, binder) => {
+  const wrap = (code, binder) => {
     const str = `(async function() {
-      let result = (${code});
+      let result = (${code.trim()});
       ${binder ? `global.${binder} = result` : 'return result'}
     }())`
-    return asyncToGen(str).toString()
+    return asyncToGen(str).toString().trim()
+  }
+
+  const isRecoverableError = (error) => {
+    if (error.name === 'SyntaxError') {
+      return /^(Unexpected end of input|Unexpected token)/.test(error.message)
+    }
+    return false
   }
 
   replServer.eval = function(originalEval) {
@@ -74,16 +81,13 @@ function addAwaitEval(replServer) {
       const match = cmd.match(re)
       if (match) {
         try {
-          // because of asyncToGen wrap throws if there is a syntax error
+          // wrap() throws if there is a syntax error
           code = wrap(match[2], match[1])
         } catch (e) {
           return callback(isRecoverableError(e) ? new repl.Recoverable(e) : e)
         }
-        vm.runInContext(code, context)
-          .then(r => {
-            callback(null, r)
-          }, callback)
 
+        vm.runInContext(code, context).then(r => callback(null, r), callback)
       } else {
         return originalEval.call(this, cmd, context, filename, callback)
       }
@@ -91,15 +95,8 @@ function addAwaitEval(replServer) {
   }(replServer.eval)
 }
 
-function isRecoverableError(error) {
-  if (error.name === 'SyntaxError') {
-    return /^(Unexpected end of input|Unexpected token)/.test(error.message);
-  }
-  return false;
-}
-
-function patch({
-  paths,
+function patchRepl({
+  appPaths,
   history = true,
   historyAutocomplete = true,
   importExport = true,
@@ -121,8 +118,8 @@ function patch({
 
       if (history) {
         // add history
-        mkdirp.sync(paths.data)
-        replHistory(replServer, paths.data + '/.history')
+        mkdirp.sync(appPaths.data)
+        replHistory(replServer, appPaths.data + '/.history')
       }
 
       if (historyAutocomplete) {
@@ -138,5 +135,5 @@ function patch({
 module.exports = {
   addAwaitEval,
   addHistoryAutocomplete,
-  patch
+  patchRepl,
 }
