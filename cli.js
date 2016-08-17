@@ -42,16 +42,16 @@ function start () {
       return [p, require(p.require)]
     } catch (e) {
       return loadPackages({ [p.require]: null }, paths.cache)
-        .then(([package]) => [p, package])
+        .then(([pkg]) => [p, pkg.package])
     }
   })).then(packages => {
-    const bindings = packages.reduce((b, [p, package]) => {
+    const bindings = packages.reduce((b, [p, pkg]) => {
       if (p.import) {
-        b[p.import] = package[p.import]
+        b[p.import] = pkg[p.import]
         console.log(chalk.blue(
           `${p.import} = require('${p.require}').${p.import}`))
       } else {
-        b[makeVariableFriendly(p.require)] = package
+        b[makeVariableFriendly(p.require)] = pkg
         console.log(chalk.blue(
           `${makeVariableFriendly(p.require)} = require('${p.require}')`))
       }
@@ -59,7 +59,7 @@ function start () {
     }, {})
 
     patch({paths})
-    const replServer = repl.start()
+    const replServer = repl.start({ignoreUndefined: true, useColors: true})
 
     Object.assign(replServer.context, bindings)
   })
