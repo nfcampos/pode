@@ -3,12 +3,10 @@
 const repl = require('repl')
 const path = require('path')
 const vm = require('vm')
-const mkdirp = require('mkdirp')
-const replHistory = require('repl.history')
-const asyncToGen = require('async-to-gen')
-const {flatten, compact} = require('lodash')
 
 function addHistoryAutocomplete(replServer) {
+  const {flatten, compact} = require('lodash')
+
   let words = []
   const wordRe = /\w{2,}/g
   const boundaryRe = /\W/
@@ -59,14 +57,25 @@ function addHistoryAutocomplete(replServer) {
 }
 
 function addAwaitEval(replServer) {
-  let re = /^(?:\s*(?:(?:let|var|const)\s)?\s*([^=]+)=\s*|^\s*)(await[\s\S]*)/
+  const asyncToGen = require('async-to-gen')
+
+  /*
+  - allow whitespace before everything else
+  - optionally capture `<varname> = `
+    - varname only matches if it starts with a-Z or _ or $
+      and if contains only those chars or numbers
+    - this is overly restrictive but is easier to maintain
+  - capture `await <anything that follows it>`
+  */
+  let re = /^\s*(?:([a-zA-Z_$][0-9a-zA-Z_$]*)\s*=\s*)?(await[\s\S]*)/
 
   const wrap = (code, binder) => {
     const str = `(async function() {
       let result = (${code.trim()});
       ${binder ? `global.${binder} = result` : 'return result'}
     }())`
-    return asyncToGen(str).toString().trim()
+    return asyncToGen(str, {
+      fastSkip: false, includeHelper: false }).toString().trim()
   }
 
   const isRecoverableError = (error) => {
@@ -75,6 +84,9 @@ function addAwaitEval(replServer) {
     }
     return false
   }
+
+  replServer.context.__async = new Function(
+    'return ' + asyncToGen.asyncHelper)()
 
   replServer.eval = function(originalEval) {
     return function (cmd, context, filename, callback) {
@@ -87,7 +99,8 @@ function addAwaitEval(replServer) {
           return callback(isRecoverableError(e) ? new repl.Recoverable(e) : e)
         }
 
-        vm.runInContext(code, context).then(r => callback(null, r), callback)
+        vm.runInContext(code, vm.createContext(context))
+          .then(r => callback(null, r), callback)
       } else {
         return originalEval.call(this, cmd, context, filename, callback)
       }
@@ -108,7 +121,7 @@ function patchRepl({
 
       if (topLevelAwait) {
         // add support for top-level await
-        topLevelAwait && addAwaitEval(replServer)
+        addAwaitEval(replServer)
       }
 
       if (importExport) {
@@ -117,6 +130,8 @@ function patchRepl({
       }
 
       if (history) {
+        const mkdirp = require('mkdirp')
+        const replHistory = require('repl.history')
         // add history
         mkdirp.sync(appPaths.data)
         replHistory(replServer, appPaths.data + '/.history')
